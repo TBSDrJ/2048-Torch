@@ -24,10 +24,12 @@ class Env2048:
     def step(self, move: torch.tensor) -> (torch.tensor, torch.tensor, bool):
         """Receive an action, return the state, reward, game_over."""
         score_before = self.game.score
+        move = move.detach().clone().to("cpu")
         move = int(move.numpy()[0])
         # Not using board_changed yet, could penalize moves that don't.
         board_changed = self.game.one_turn(move)
-        reward = self.game.score - score_before
+        # Penalize game-ending moves.
+        reward = self.game.score - score_before - 100*self.game.game_over
         reward = torch.tensor([reward], dtype=torch.int32)
         return self.state, reward, self.game.game_over
 
