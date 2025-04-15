@@ -12,12 +12,13 @@ class Env2048:
     def reset(self, width:int=4, height:int=4, prob_4:float=0.1):
         """Reset the environment with a new game."""
         self.game = Game2048(width, height, prob_4)
+        return self.state
 
     @property
     def state(self):
         """Read-only attribute for the current state of the game."""
         state = self.game.board
-        state = torch.tensor(state, dtype=torch.int32)
+        state = torch.tensor([state], dtype=torch.int32)
         return state
 
     def step(self, move: torch.tensor) -> (torch.tensor, torch.tensor, bool):
