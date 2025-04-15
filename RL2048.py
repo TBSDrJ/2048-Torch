@@ -22,8 +22,6 @@ torch.manual_seed(2048) # What else?
 WIDTH = 4
 HEIGHT = 4
 PROB_4 = 0.1
-env = Env2048(WIDTH, HEIGHT, PROB_4)
-
 BATCH_SIZE = 16
 
 class ReplayMemory:
@@ -71,3 +69,19 @@ class DQN(torch.nn.Module):
         y = self.relu(y)
         y = self.linear_2(y)
         return y
+
+def main():
+    env = Env2048(WIDTH, HEIGHT, PROB_4)
+    policy_net = DQN(env)
+    target_net = DQN(env)
+    target_net.load_state_dict(policy_net.state_dict())
+    optimizer = torch.optim.AdamW(policy_net.parameters(), lr=0.001, 
+            amsgrad=True)
+    lr_sch = torch.optim.lr_scheduler.MultiplicativeLR(optimizer, 
+            lambda epoch: 0.995)
+    memory = ReplayMemory(10000)
+    episode_scores = []
+
+
+if __name__ == "__main__":
+    main()
