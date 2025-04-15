@@ -23,7 +23,7 @@ torch.manual_seed(2048) # What else?
 WIDTH = 4
 HEIGHT = 4
 PROB_4 = 0.1
-BATCH_SIZE = 16
+BATCH_SIZE = 1
 EPISODES = 2
 
 class ReplayMemory:
@@ -64,7 +64,7 @@ class DQN(torch.nn.Module):
         if isinstance(x, np.ndarray):
             x = torch.tensor(x)
         if len(x.shape) > 2:
-            x.reshape((BATCH_SIZE, -1))
+            x = x.reshape((BATCH_SIZE, -1))
         x = x.to(torch.float32)
         y = self.linear_0(x)
         y = self.relu(y)
@@ -84,14 +84,21 @@ def select_move(env: Env2048, policy_net: DQN, state: torch.tensor, steps: int
     decay_steps = 1000
     threshold = end + (start - end) * math.exp(-1. * steps / decay_steps)
     if prob > threshold:
-        print("network")
         with torch.no_grad():
             return policy_net(state).max(1).indices.reshape(1, 1)
     else:
-        print("random")
         # numel just returns num of elements
         n = torch.randint(0, torch.numel(env.action_space), [1, 1])
         return env.action_space[n]
+
+def optimize_model(
+        policy_net: DQN, 
+        target_net: DQN, 
+        optimizer: torch.optim.Optimizer, 
+        lr_sch: torch.optim.lr_scheduler.LRScheduler,
+        memory: ReplayMemory,
+    ):
+    """"""
 
 def main():
     env = Env2048(WIDTH, HEIGHT, PROB_4)
@@ -104,11 +111,17 @@ def main():
             lambda epoch: 0.995)
     memory = ReplayMemory(10000)
     episode_scores = []
+    steps = 0
     for i in range(EPISODES):
-        state = env.state.reshape(1, -1)
-        print(select_move(env, policy_net, state, 0))
-        print(select_move(env, policy_net, state, 10000))
-
+        state = env.reset()
+        game_over = False
+        while not game_over:
+            move = select_move(env, policy_net, state, steps)
+            next_state, reward, game_over = env.step(move)
+            steps += 1
+            memory.append(state, move, next_state, reward)
+            state = next_state
+            optimize_model(policy_net, target_net, optimizer, lr_sch, memory)
 
 if __name__ == "__main__":
     main()
