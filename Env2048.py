@@ -6,12 +6,12 @@ from Game2048 import Game2048
 
 class Env2048:
     """Create an environment to use for RL in Torch."""
-    def __init__(self):
-        self.reset()
+    def __init__(self, width:int=4, height:int=4, prob_4:float=0.1):
+        self.reset(width, height, prob_4)
 
-    def reset(self):
+    def reset(self, width:int=4, height:int=4, prob_4:float=0.1):
         """Reset the environment with a new game."""
-        self.game = Game2048()
+        self.game = Game2048(width, height, prob_4)
 
     @property
     def state(self):
