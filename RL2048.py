@@ -7,6 +7,7 @@ https://pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
 """
 from collections import namedtuple, deque
 import random
+import math
 
 import torch
 import numpy as np
@@ -23,6 +24,7 @@ WIDTH = 4
 HEIGHT = 4
 PROB_4 = 0.1
 BATCH_SIZE = 16
+EPISODES = 2
 
 class ReplayMemory:
     def __init__(self, max_length: int):
@@ -33,7 +35,7 @@ class ReplayMemory:
         """Append a transition to memory.
         
         Expects:
-        state and next_state shapes to be [m, n] where m x n is the board size.
+        state and next_state shapes to be [WIDTH, HEIGHT] and
         move and reward shapes to be [1]."""
         self.memory.append(Transition(state, move, next_state, reward))
 
@@ -51,7 +53,7 @@ class DQN(torch.nn.Module):
     def __init__(self, env: Env2048):
         super().__init__()
         len_input = env.game.width * env.game.height
-        len_output = int(env.action_space.shape[0])
+        len_output = torch.numel(env.action_space)
         self.linear_0 = torch.nn.Linear(len_input, len_input)
         self.linear_1 = torch.nn.Linear(len_input, len_input)
         self.linear_2 = torch.nn.Linear(len_input, len_output)
@@ -63,12 +65,33 @@ class DQN(torch.nn.Module):
             x = torch.tensor(x)
         if len(x.shape) > 2:
             x.reshape((BATCH_SIZE, -1))
+        x = x.to(torch.float32)
         y = self.linear_0(x)
         y = self.relu(y)
         y = self.linear_1(y)
         y = self.relu(y)
         y = self.linear_2(y)
         return y
+
+def select_move(env: Env2048, policy_net: DQN, state: torch.tensor, steps: int
+        ) -> torch.int32:
+    """Pick a move. Random more often early, use policy_net more later.
+    
+    Use an exponentially decaying threshold for the decision of which. """
+    prob = random.random()
+    start = 0.9
+    end = 0.05
+    decay_steps = 1000
+    threshold = end + (start - end) * math.exp(-1. * steps / decay_steps)
+    if prob > threshold:
+        print("network")
+        with torch.no_grad():
+            return policy_net(state).max(1).indices.reshape(1, 1)
+    else:
+        print("random")
+        # numel just returns num of elements
+        n = torch.randint(0, torch.numel(env.action_space), [1, 1])
+        return env.action_space[n]
 
 def main():
     env = Env2048(WIDTH, HEIGHT, PROB_4)
@@ -81,6 +104,10 @@ def main():
             lambda epoch: 0.995)
     memory = ReplayMemory(10000)
     episode_scores = []
+    for i in range(EPISODES):
+        state = env.state.reshape(1, -1)
+        print(select_move(env, policy_net, state, 0))
+        print(select_move(env, policy_net, state, 10000))
 
 
 if __name__ == "__main__":
