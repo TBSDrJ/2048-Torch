@@ -9,6 +9,7 @@ from collections import namedtuple, deque
 import random
 
 import torch
+import numpy as np
 
 from Env2048 import Env2048
 
@@ -50,8 +51,23 @@ class ReplayMemory:
 
 class DQN(torch.nn.Module):
     def __init__(self, env: Env2048):
+        super().__init__()
         len_input = env.game.width * env.game.height
         len_output = int(env.action_space.shape[0])
-        
-
-net = DQN(env)
+        self.linear_0 = torch.nn.Linear(len_input, len_input)
+        self.linear_1 = torch.nn.Linear(len_input, len_input)
+        self.linear_2 = torch.nn.Linear(len_input, len_output)
+        self.relu = torch.nn.ReLU()
+    
+    def forward(self, x: "torch.tensor | np.ndarray") -> torch.tensor:
+        # First, make sure input is 2-D tensor, with dim_0 = batch dim.
+        if isinstance(x, np.ndarray):
+            x = torch.tensor(x)
+        if len(x.shape) > 2:
+            x.reshape((BATCH_SIZE, -1))
+        y = self.linear_0(x)
+        y = self.relu(y)
+        y = self.linear_1(y)
+        y = self.relu(y)
+        y = self.linear_2(y)
+        return y
