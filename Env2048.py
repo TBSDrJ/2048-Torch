@@ -30,10 +30,10 @@ class Env2048:
         reward = torch.tensor([reward], dtype=torch.int32)
         return self.state, reward, self.game.game_over
 
-
+    @property
     def action_space(self) -> torch.tensor:
         """Return a list of all possible actions."""
-        return tf.tensor([0, 1, 2, 3], dtype=torch.int32)
+        return torch.tensor([0, 1, 2, 3], dtype=torch.int32)
 
 
 if __name__ == "__main__":

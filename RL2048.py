@@ -48,3 +48,10 @@ class ReplayMemory:
     def __getitem__(self: int) -> Transition:
         return self.memory[i]
 
+class DQN(torch.nn.Module):
+    def __init__(self, env: Env2048):
+        len_input = env.game.width * env.game.height
+        len_output = int(env.action_space.shape[0])
+        
+
+net = DQN(env)
