@@ -15,6 +15,7 @@ class Game2048:
         self.game_over = False
         self.score = 0
         self.board = self._new_game()
+        random.seed(2048)
 
     def _new_game(self) -> list[list[int]]:
         """Sets up a new board with two random tiles in it."""
@@ -231,14 +232,24 @@ class Text2048:
         print(board_end, end="", **kwargs)
 
 if __name__ == "__main__":
-    ap = ArgumentParser()
-    ap.add_argument("--width", default=4, type=int,
-            help="Set the width, or number of columns of the board.")
-    ap.add_argument("--height", default=4, type=int,
-            help="Set the height, or number of rows of the board.")
-    ap.add_argument("-p", "--prob4", default=0.1, type=float,
-            help="Set the probability that you get a 4 in a new tile.")
-    args = vars(ap.parse_args())
-    print(args)
-    game = Text2048(width=args["width"], height=args["height"], 
-            prob_4=args["prob4"])
+    # ap = ArgumentParser()
+    # ap.add_argument("--width", default=4, type=int,
+    #         help="Set the width, or number of columns of the board.")
+    # ap.add_argument("--height", default=4, type=int,
+    #         help="Set the height, or number of rows of the board.")
+    # ap.add_argument("-p", "--prob4", default=0.1, type=float,
+    #         help="Set the probability that you get a 4 in a new tile.")
+    # args = vars(ap.parse_args())
+    # print(args)
+    # game = Text2048(width=args["width"], height=args["height"], 
+    #         prob_4=args["prob4"])
+    scores = []
+    for i in range(100):
+        game = Game2048()
+        while not game.game_over:
+            move = random.randrange(4)
+            game.one_turn(move)
+            print(game.score, end="\r")
+        print()
+        scores.append(game.score)
+    print(sum(scores) / len(scores))
