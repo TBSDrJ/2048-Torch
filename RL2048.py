@@ -23,15 +23,16 @@ torch.manual_seed(2048) # What else?
 WIDTH = 4
 HEIGHT = 4
 PROB_4 = 0.1
-BATCH_SIZE = 1
-EPISODES = 2
+BATCH_SIZE = 128
+EPISODES = 200
+BUFFER = 10000
 
 class ReplayMemory:
     def __init__(self, max_length: int):
         self.memory = deque(maxlen=max_length)
     
-    def append(self, state: torch.tensor, move: torch.tensor, 
-            next_state: torch.tensor, reward: torch.tensor) -> None:
+    def append(self, state: torch.Tensor, move: torch.Tensor, 
+            next_state: torch.Tensor, reward: torch.Tensor) -> None:
         """Append a transition to memory.
         
         Expects:
@@ -59,12 +60,7 @@ class DQN(torch.nn.Module):
         self.linear_2 = torch.nn.Linear(len_input, len_output)
         self.relu = torch.nn.ReLU()
     
-    def forward(self, x: "torch.tensor | np.ndarray") -> torch.tensor:
-        # First, make sure input is 2-D tensor, with dim_0 = batch dim.
-        if isinstance(x, np.ndarray):
-            x = torch.tensor(x)
-        if len(x.shape) > 2:
-            x = x.reshape((BATCH_SIZE, -1))
+    def forward(self, x: "torch.Tensor | np.ndarray") -> torch.Tensor:
         x = x.to(torch.float32)
         y = self.linear_0(x)
         y = self.relu(y)
@@ -73,7 +69,7 @@ class DQN(torch.nn.Module):
         y = self.linear_2(y)
         return y
 
-def select_move(env: Env2048, policy_net: DQN, state: torch.tensor, steps: int
+def select_move(env: Env2048, policy_net: DQN, state: torch.Tensor, steps: int
         ) -> torch.int32:
     """Pick a move. Random more often early, use policy_net more later.
     
@@ -81,10 +77,12 @@ def select_move(env: Env2048, policy_net: DQN, state: torch.tensor, steps: int
     prob = random.random()
     start = 0.9
     end = 0.05
-    decay_steps = 1000
+    decay_steps = 3000
     threshold = end + (start - end) * math.exp(-1. * steps / decay_steps)
     if prob > threshold:
         with torch.no_grad():
+            state = state.flatten()
+            state = state.reshape(1, -1)
             return policy_net(state).max(1).indices.reshape(1, 1)
     else:
         # numel just returns num of elements
@@ -98,30 +96,73 @@ def optimize_model(
         lr_sch: torch.optim.lr_scheduler.LRScheduler,
         memory: ReplayMemory,
     ):
-    """"""
+    """Optimization step."""
+    if len(memory) < BUFFER:
+        return
+    discount = 0.99
+    transitions = memory.random_sample(BATCH_SIZE)
+    batch = Transition(*zip(*transitions))
+    batch_state = torch.cat(batch.state).reshape((BATCH_SIZE, -1))
+    batch_move = torch.cat(batch.move)
+    batch_next_state = torch.cat(batch.next_state).reshape((BATCH_SIZE, -1))
+    batch_reward = torch.cat(batch.reward)
+    pred_actions = policy_net(batch_state).max(1).indices
+    with torch.no_grad():
+        expected_actions = target_net(batch_state).max(1).indices
+    pred_val_at_move = policy_net(batch_state).gather(1, batch_move)
+    expected_val = (expected_actions*discount).unsqueeze(1)
+    loss = torch.nn.HuberLoss()(pred_val_at_move, expected_val)
+    policy_state_dict = policy_net.state_dict()
+    target_state_dict = target_net.state_dict()
+    for key in target_net.state_dict():
+        target_state_dict[key] = (policy_state_dict[key] * 0.01 + 
+                target_state_dict[key] * .99)
+    target_net.load_state_dict(target_state_dict)
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+    lr_sch.step()
 
 def main():
     env = Env2048(WIDTH, HEIGHT, PROB_4)
     policy_net = DQN(env)
     target_net = DQN(env)
+    policy_net.train()
+    target_net.train()
     target_net.load_state_dict(policy_net.state_dict())
     optimizer = torch.optim.AdamW(policy_net.parameters(), lr=0.001, 
             amsgrad=True)
     lr_sch = torch.optim.lr_scheduler.MultiplicativeLR(optimizer, 
             lambda epoch: 0.995)
-    memory = ReplayMemory(10000)
+    memory = ReplayMemory(100000)
     episode_scores = []
     steps = 0
+    prev_steps = 0
+    buffer_reached = False
+    print(f"Buffering {BUFFER} steps before starting training...")
+    print("Ep   Steps   Score   Avg.Score")
     for i in range(EPISODES):
         state = env.reset()
         game_over = False
         while not game_over:
-            move = select_move(env, policy_net, state, steps)
+            move = select_move(env, policy_net, state, 100*steps)
             next_state, reward, game_over = env.step(move)
             steps += 1
             memory.append(state, move, next_state, reward)
             state = next_state
             optimize_model(policy_net, target_net, optimizer, lr_sch, memory)
+            if buffer_reached:
+                print(f"{i:^3}  {steps - prev_steps:^5}   ", end="")
+                print(f"{env.game.score:^5}   ", end="\r")
+        if buffer_reached:
+            episode_scores.append((steps - prev_steps, env.game.score))
+            all_scores = [e[1] for e in episode_scores]
+            print(f"{i:^3}  {steps - prev_steps:^5}   ", end="")
+            print(f"{env.game.score:^5}   ", end="")
+            print(f"{sum(all_scores) / len(all_scores):.2f}")
+        if steps > BUFFER:
+            buffer_reached = True
+        prev_steps = steps
 
 if __name__ == "__main__":
     main()
