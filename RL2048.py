@@ -47,7 +47,7 @@ class ReplayMemory:
     def __len__(self) -> int:
         return len(self.memory)
 
-    def __getitem__(self: int) -> Transition:
+    def __getitem__(self, i: int) -> Transition:
         return self.memory[i]
 
 class DQN(torch.nn.Module):
@@ -99,8 +99,11 @@ def optimize_model(
     """Optimization step."""
     if len(memory) < BUFFER:
         return
-    discount = 0.99
-    transitions = memory.random_sample(BATCH_SIZE)
+    discount = 0.98
+    transitions = memory.random_sample(BATCH_SIZE - 1)
+    # I decided to make sure most recent move is included in the batch.
+    transitions.append(memory[-1])
+    # Change from batch of Transitions to a Transition of batches
     batch = Transition(*zip(*transitions))
     batch_state = torch.cat(batch.state).reshape((BATCH_SIZE, -1))
     batch_move = torch.cat(batch.move)
