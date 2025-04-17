@@ -20,12 +20,12 @@ Transition = namedtuple('Transition',
 torch.set_default_device("mps")
 torch.manual_seed(2048) # What else?
 
-WIDTH = 4
-HEIGHT = 4
+WIDTH = 3
+HEIGHT = 3
 PROB_4 = 0.1
 BATCH_SIZE = 128
 EPISODES = 200
-BUFFER = 10000
+BUFFER = 500
 
 class ReplayMemory:
     def __init__(self, max_length: int):
@@ -79,8 +79,10 @@ def select_move(env: Env2048, policy_net: DQN, state: torch.Tensor, steps: int
     prob = random.random()
     start = 0.9
     end = 0.05
-    decay_steps = 3000
+    decay_steps = 5000
     threshold = end + (start - end) * math.exp(-1. * steps / decay_steps)
+    if (steps + 1) % 500 == 0: 
+        print(" "*53 + f"{threshold:.4f}", end="\r")
     if prob > threshold:
         with torch.no_grad():
             state = state.flatten()
@@ -138,22 +140,22 @@ def main():
     policy_net.train()
     target_net.train()
     target_net.load_state_dict(policy_net.state_dict())
-    optimizer = torch.optim.AdamW(policy_net.parameters(), lr=0.001, 
+    optimizer = torch.optim.AdamW(policy_net.parameters(), lr=0.0005, 
             amsgrad=True)
     lr_sch = torch.optim.lr_scheduler.MultiplicativeLR(optimizer, 
-            lambda epoch: 0.995)
-    memory = ReplayMemory(100000)
+            lambda epoch: 1)
+    memory = ReplayMemory(10000)
     episode_scores = []
     steps = 0
     prev_steps = 0
     buffer_reached = False
     print(f"Buffering {BUFFER} steps before starting training...")
-    print("Ep   Steps   Score   Avg.Score")
+    print("Ep   Steps   Score   Avg.Score   Last 10     LR     % rand moves")
     for i in range(EPISODES):
         state = env.reset()
         game_over = False
         while not game_over:
-            move = select_move(env, policy_net, state, 100*steps)
+            move = select_move(env, policy_net, state, steps)
             next_state, reward, game_over = env.step(move)
             steps += 1
             game_over_tensor = torch.tensor([game_over], dtype=torch.bool)
@@ -168,7 +170,13 @@ def main():
             all_scores = [e[1] for e in episode_scores]
             print(f"{i:^3}  {steps - prev_steps:^5}   ", end="")
             print(f"{env.game.score:^5}   ", end="")
-            print(f"{sum(all_scores) / len(all_scores):.2f}")
+            print(f"{sum(all_scores) / len(all_scores):.2f}", end="")
+            if len(episode_scores) >= 10:
+                ten_scores = [e[1] for e in episode_scores[-10:]]
+                print(f"   {sum(ten_scores) / len(ten_scores):.2f}", end="")
+            else:
+                print(" " * 9, end="")
+            print(f"   {lr_sch.get_last_lr()[0]:.6f}")
         if steps > BUFFER:
             buffer_reached = True
         prev_steps = steps
