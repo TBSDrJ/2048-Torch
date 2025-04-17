@@ -7,11 +7,14 @@ from Game2048 import Game2048
 class Env2048:
     """Create an environment to use for RL in Torch."""
     def __init__(self, width:int=4, height:int=4, prob_4:float=0.1):
-        self.reset(width, height, prob_4)
+        self.width = width
+        self.height = height
+        self.prob_4 = prob_4
+        self.reset()
 
-    def reset(self, width:int=4, height:int=4, prob_4:float=0.1):
+    def reset(self):
         """Reset the environment with a new game."""
-        self.game = Game2048(width, height, prob_4)
+        self.game = Game2048(self.width, self.height, self.prob_4)
         return self.state
 
     @property
