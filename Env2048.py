@@ -1,4 +1,5 @@
 import random
+import math
 
 import torch
 
@@ -31,8 +32,10 @@ class Env2048:
         move = int(move.numpy()[0])
         # Not using board_changed yet, could penalize moves that don't.
         board_changed = self.game.one_turn(move)
-        # Penalize game-ending moves.
-        reward = self.game.score - score_before - 100*self.game.game_over
+        turn_score = self.game.score - score_before
+        if turn_score == 0:
+            turn_score += 1
+        reward = turn_score.bit_length()
         reward = torch.tensor([reward], dtype=torch.int32)
         return self.state, reward, self.game.game_over
 
