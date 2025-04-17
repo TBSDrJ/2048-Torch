@@ -15,7 +15,7 @@ import numpy as np
 from Env2048 import Env2048
 
 Transition = namedtuple('Transition', 
-        ('state', 'move', 'next_state', 'reward'))
+        ('state', 'move', 'next_state', 'reward', 'game_over'))
 
 torch.set_default_device("mps")
 torch.manual_seed(2048) # What else?
@@ -32,13 +32,15 @@ class ReplayMemory:
         self.memory = deque(maxlen=max_length)
     
     def append(self, state: torch.Tensor, move: torch.Tensor, 
-            next_state: torch.Tensor, reward: torch.Tensor) -> None:
+            next_state: torch.Tensor, reward: torch.Tensor, 
+            game_over: bool) -> None:
         """Append a transition to memory.
         
         Expects:
         state and next_state shapes to be [WIDTH, HEIGHT] and
         move and reward shapes to be [1]."""
-        self.memory.append(Transition(state, move, next_state, reward))
+        self.memory.append(
+                Transition(state, move, next_state, reward, game_over))
 
     def random_sample(self, batch_size: int = BATCH_SIZE) -> list[Transition]:
         """Get a random sample of moves from this memory."""
@@ -106,15 +108,18 @@ def optimize_model(
     # Change from batch of Transitions to a Transition of batches
     batch = Transition(*zip(*transitions))
     batch_state = torch.cat(batch.state).reshape((BATCH_SIZE, -1))
-    batch_move = torch.cat(batch.move)
+    batch_move = torch.cat(batch.move).to(torch.int64)
     batch_next_state = torch.cat(batch.next_state).reshape((BATCH_SIZE, -1))
     batch_reward = torch.cat(batch.reward)
-    pred_actions = policy_net(batch_state).max(1).indices
+    batch_game_not_over = torch.cat(batch.game_over).logical_not()
+    pred_q_for_actual_move = policy_net(batch_state).gather(1, batch_move)
+    target_q_future_max = torch.zeros((BATCH_SIZE))
     with torch.no_grad():
-        expected_actions = target_net(batch_state).max(1).indices
-    pred_val_at_move = policy_net(batch_state).gather(1, batch_move)
-    expected_val = (expected_actions*discount).unsqueeze(1)
-    loss = torch.nn.HuberLoss()(pred_val_at_move, expected_val)
+        target_q_future_max = target_net(batch_next_state).max(1).values
+    target_q_future_max * batch_game_not_over
+    target_q = discount * target_q_future_max + batch_reward
+    target_q = target_q.reshape((BATCH_SIZE, 1))
+    loss = torch.nn.HuberLoss()(pred_q_for_actual_move, target_q)
     policy_state_dict = policy_net.state_dict()
     target_state_dict = target_net.state_dict()
     for key in target_net.state_dict():
@@ -151,7 +156,8 @@ def main():
             move = select_move(env, policy_net, state, 100*steps)
             next_state, reward, game_over = env.step(move)
             steps += 1
-            memory.append(state, move, next_state, reward)
+            game_over_tensor = torch.tensor([game_over], dtype=torch.bool)
+            memory.append(state, move, next_state, reward, game_over_tensor)
             state = next_state
             optimize_model(policy_net, target_net, optimizer, lr_sch, memory)
             if buffer_reached:
