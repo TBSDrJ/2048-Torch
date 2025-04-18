@@ -17,15 +17,15 @@ from Env2048 import Env2048
 Transition = namedtuple('Transition', 
         ('state', 'move', 'next_state', 'reward', 'game_over'))
 
-torch.set_default_device("mps")
+torch.set_default_device("cuda")
 torch.manual_seed(2048) # What else?
 
-WIDTH = 3
-HEIGHT = 3
+WIDTH = 4
+HEIGHT = 4
 PROB_4 = 0.1
-BATCH_SIZE = 128
-EPISODES = 200
-BUFFER = 500
+BATCH_SIZE = 16
+EPISODES = 5000
+BUFFER = 200
 
 class ReplayMemory:
     def __init__(self, max_length: int):
@@ -78,8 +78,8 @@ def select_move(env: Env2048, policy_net: DQN, state: torch.Tensor, steps: int
     Use an exponentially decaying threshold for the decision of which. """
     prob = random.random()
     start = 0.9
-    end = 0.05
-    decay_steps = 5000
+    end = 0.02
+    decay_steps = 20000
     threshold = end + (start - end) * math.exp(-1. * steps / decay_steps)
     if (steps + 1) % 500 == 0: 
         print(" "*53 + f"{threshold:.4f}", end="\r")
@@ -103,7 +103,7 @@ def optimize_model(
     """Optimization step."""
     if len(memory) < BUFFER:
         return
-    discount = 0.98
+    discount = 0.8
     transitions = memory.random_sample(BATCH_SIZE - 1)
     # I decided to make sure most recent move is included in the batch.
     transitions.append(memory[-1])
@@ -140,11 +140,11 @@ def main():
     policy_net.train()
     target_net.train()
     target_net.load_state_dict(policy_net.state_dict())
-    optimizer = torch.optim.AdamW(policy_net.parameters(), lr=0.0005, 
+    optimizer = torch.optim.AdamW(policy_net.parameters(), lr=0.001, 
             amsgrad=True)
     lr_sch = torch.optim.lr_scheduler.MultiplicativeLR(optimizer, 
-            lambda epoch: 1)
-    memory = ReplayMemory(10000)
+            lambda epoch: 0.9999)
+    memory = ReplayMemory(100000)
     episode_scores = []
     steps = 0
     prev_steps = 0
@@ -176,7 +176,7 @@ def main():
                 print(f"   {sum(ten_scores) / len(ten_scores):.2f}", end="")
             else:
                 print(" " * 9, end="")
-            print(f"   {lr_sch.get_last_lr()[0]:.6f}")
+            print(f"   {lr_sch.get_last_lr()[0]:.8f}")
         if steps > BUFFER:
             buffer_reached = True
         prev_steps = steps

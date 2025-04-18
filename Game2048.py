@@ -162,31 +162,32 @@ class Game2048:
         return ch
 
 class Text2048:
-    def __init__(self, width = 4, height = 4, prob_4 = 0.1):
+    def __init__(self, width = 4, height = 4, prob_4 = 0.1, play_game = True):
         self.width = width
         self.height = height
         self.prob_4 = prob_4
         self.game = Game2048(width, height, prob_4)
-        print("Please use WASD controls: W=Up, A=Left, S=Down, D=Right.")
-        print()
-        self.print_board()
-        print(f"SCORE: {self.game.score}")
-        print()
-        while not self.game.game_over:
-            move = input("Move: ")
-            valid_moves = ['W', 'w', 'A', 'a', 'S', 's', 'D', 'd']
-            if move in valid_moves:
-                if move == 'W' or move == 'w': move = 0
-                if move == 'A' or move == 'a': move = 1
-                if move == 'S' or move == 's': move = 2
-                if move == 'D' or move == 'd': move = 3
-                self.game.one_turn(move)
-                self.print_board()
-                print(f"SCORE: {self.game.score}")
-                print()
-            else:
-                print("Invalid Move, please try again.")
-        print("GAME OVER.  Thanks for playing!")
+        if play_game:
+            print("Please use WASD controls: W=Up, A=Left, S=Down, D=Right.")
+            print()
+            self.print_board()
+            print(f"SCORE: {self.game.score}")
+            print()
+            while not self.game.game_over:
+                move = input("Move: ")
+                valid_moves = ['W', 'w', 'A', 'a', 'S', 's', 'D', 'd']
+                if move in valid_moves:
+                    if move == 'W' or move == 'w': move = 0
+                    if move == 'A' or move == 'a': move = 1
+                    if move == 'S' or move == 's': move = 2
+                    if move == 'D' or move == 'd': move = 3
+                    self.game.one_turn(move)
+                    self.print_board()
+                    print(f"SCORE: {self.game.score}")
+                    print()
+                else:
+                    print("Invalid Move, please try again.")
+            print("GAME OVER.  Thanks for playing!")
 
     def print_board(self, **kwargs) -> None:
         """Will pass kwargs to print call other than end.
@@ -197,6 +198,7 @@ class Text2048:
         row_end: Replace default "|\n" with kwargs["row_end"]
         board_start: Replace default "" with kwargs["board_start"]
         board_end: Replace default "" with kwargs["board_end"]
+        file: Replace default None with kwargs["file"]
         """
         if "end" in kwargs.keys():
             end = kwargs["end"]
@@ -223,13 +225,18 @@ class Text2048:
             del kwargs["board_end"]
         else:
             board_end = ""
-        print(board_start, end="", **kwargs)
+        if "file" in kwargs.keys():
+            print_file = kwargs["file"]
+            del kwargs["file"]
+        else:
+            print_file = None
+        print(board_start, end="", file=print_file, **kwargs)
         for row in self.game.board:
-            print(row_start, end="", **kwargs)
+            print(row_start, end="", file=print_file, **kwargs)
             for entry in row:
-                print(f"{entry:5}", end=end, **kwargs)
-            print(row_end, end="", **kwargs)
-        print(board_end, end="", **kwargs)
+                print(f"{entry:5}", end=end, file=print_file, **kwargs)
+            print(row_end, end="", file=print_file, **kwargs)
+        print(board_end, end="", file=print_file, **kwargs)
 
 if __name__ == "__main__":
     # ap = ArgumentParser()
