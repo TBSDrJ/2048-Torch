@@ -13,17 +13,18 @@ import torch
 import numpy as np
 
 from Env2048 import Env2048
+import read_saved_games
 
 Transition = namedtuple('Transition', 
         ('state', 'move', 'next_state', 'reward', 'game_over'))
 
-torch.set_default_device("cuda")
+torch.set_default_device("mps")
 torch.manual_seed(2048) # What else?
 
-WIDTH = 4
-HEIGHT = 4
+WIDTH = 3
+HEIGHT = 3
 PROB_4 = 0.1
-BATCH_SIZE = 16
+BATCH_SIZE = 512
 EPISODES = 5000
 BUFFER = 200
 
@@ -77,9 +78,9 @@ def select_move(env: Env2048, policy_net: DQN, state: torch.Tensor, steps: int
     
     Use an exponentially decaying threshold for the decision of which. """
     prob = random.random()
-    start = 0.9
-    end = 0.02
-    decay_steps = 20000
+    start = 0.25
+    end = 0.05
+    decay_steps = 5000
     threshold = end + (start - end) * math.exp(-1. * steps / decay_steps)
     if (steps + 1) % 500 == 0: 
         print(" "*53 + f"{threshold:.4f}", end="\r")
@@ -101,8 +102,8 @@ def optimize_model(
         memory: ReplayMemory,
     ):
     """Optimization step."""
-    if len(memory) < BUFFER:
-        return
+    # if len(memory) < BUFFER:
+    #     return
     discount = 0.8
     transitions = memory.random_sample(BATCH_SIZE - 1)
     # I decided to make sure most recent move is included in the batch.
@@ -133,6 +134,18 @@ def optimize_model(
     optimizer.step()
     lr_sch.step()
 
+def read_saves(memory: ReplayMemory) -> None:
+    """Read saved games from file and append to memory."""
+    print("Reading moves from file...")
+    transitions = read_saved_games.read_saves(WIDTH, HEIGHT)
+    for transition in transitions:
+        state = torch.tensor([transition.state], dtype=torch.int32)
+        move = torch.tensor([[transition.move]], dtype=torch.int32)
+        next_state = torch.tensor([transition.next_state], dtype=torch.int32)
+        reward = torch.tensor([transition.reward], dtype=torch.int32)
+        game_over = torch.tensor([transition.game_over], dtype=torch.bool)
+        memory.append(state, move, next_state, reward, game_over)
+
 def main():
     env = Env2048(WIDTH, HEIGHT, PROB_4)
     policy_net = DQN(env)
@@ -143,13 +156,14 @@ def main():
     optimizer = torch.optim.AdamW(policy_net.parameters(), lr=0.001, 
             amsgrad=True)
     lr_sch = torch.optim.lr_scheduler.MultiplicativeLR(optimizer, 
-            lambda epoch: 0.9999)
+            lambda epoch: 0.999)
     memory = ReplayMemory(100000)
+    read_saves(memory)
     episode_scores = []
     steps = 0
     prev_steps = 0
-    buffer_reached = False
-    print(f"Buffering {BUFFER} steps before starting training...")
+    buffer_reached = True 
+    # print(f"Buffering {BUFFER} steps before starting training...")
     print("Ep   Steps   Score   Avg.Score   Last 10     LR     % rand moves")
     for i in range(EPISODES):
         state = env.reset()
