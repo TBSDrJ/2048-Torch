@@ -19,7 +19,7 @@ import read_saved_games
 Transition = namedtuple('Transition', 
         ('state', 'move', 'next_state', 'reward', 'game_over'))
 
-torch.set_default_device("mps")
+torch.set_default_device("cuda")
 torch.manual_seed(2048) # What else?
 
 WIDTH = 4
@@ -32,7 +32,8 @@ TIME_STAMP = time.strftime('%Y_%m_%d_%H_%M')
 
 class ReplayMemory:
     def __init__(self, max_length: int):
-        self.memory = deque(maxlen=max_length)
+        self.memory = []
+        self.max_length = max_length
     
     def append(self, state: torch.Tensor, move: torch.Tensor, 
             next_state: torch.Tensor, reward: torch.Tensor, 
@@ -44,6 +45,8 @@ class ReplayMemory:
         move and reward shapes to be [1]."""
         self.memory.append(
                 Transition(state, move, next_state, reward, game_over))
+        while len(self.memory) > self.max_length:
+            self.memory.pop(0)
 
     def random_sample(self, batch_size: int = BATCH_SIZE) -> list[Transition]:
         """Get a random sample of moves from this memory."""
@@ -54,6 +57,18 @@ class ReplayMemory:
 
     def __getitem__(self, i: int) -> Transition:
         return self.memory[i]
+
+    def purge(self) -> None:
+        """Pare down the number of similar moves in the memory."""
+        possible_removal = [False] * len(self.memory)
+        for i, entry in enumerate(self.memory):
+            if int(entry.reward) < 5 and not entry.game_over:
+                possible_removal[i] = True
+        n = len(self.memory)
+        print(f"{sum(possible_removal)=}", end="\t")
+        for i in range(1, len(self.memory)+1):
+            if possible_removal[-i] and random.random() < 0.5:
+                e = self.memory.pop(n-i)
 
 class DQN(torch.nn.Module):
     def __init__(self, env: Env2048):
@@ -179,6 +194,10 @@ def main():
         state = env.reset()
         game_over = False
         while not game_over:
+            if (steps + 1) % 1000 == 0 and len(memory) > 1.5*BUFFER:
+                print(f"\n{len(memory)=}", end="\t")
+                memory.purge()
+                print(f"{len(memory)=}")
             move = select_move(env, policy_net, state, steps)
             next_state, reward, game_over = env.step(move)
             steps += 1
