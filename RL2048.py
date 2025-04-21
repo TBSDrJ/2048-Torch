@@ -8,6 +8,7 @@ https://pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
 from collections import namedtuple, deque
 import random
 import math
+import time
 
 import torch
 import numpy as np
@@ -18,23 +19,25 @@ import read_saved_games
 Transition = namedtuple('Transition', 
         ('state', 'move', 'next_state', 'reward', 'game_over'))
 
-torch.set_default_device("mps")
+torch.set_default_device("cuda")
 torch.manual_seed(2048) # What else?
 
-WIDTH = 3
-HEIGHT = 3
+WIDTH = 4
+HEIGHT = 4
 PROB_4 = 0.1
 BATCH_SIZE = 512
 EPISODES = 5000
-BUFFER = 200
+BUFFER = 2000
+TIME_STAMP = time.strftime('%Y_%m_%d_%H_%M')
 
 class ReplayMemory:
     def __init__(self, max_length: int):
-        self.memory = deque(maxlen=max_length)
+        self.memory = []
+        self.max_length = max_length
     
     def append(self, state: torch.Tensor, move: torch.Tensor, 
             next_state: torch.Tensor, reward: torch.Tensor, 
-            game_over: bool) -> None:
+            game_over: torch.Tensor) -> None:
         """Append a transition to memory.
         
         Expects:
@@ -42,6 +45,8 @@ class ReplayMemory:
         move and reward shapes to be [1]."""
         self.memory.append(
                 Transition(state, move, next_state, reward, game_over))
+        while len(self.memory) > self.max_length:
+            self.memory.pop(0)
 
     def random_sample(self, batch_size: int = BATCH_SIZE) -> list[Transition]:
         """Get a random sample of moves from this memory."""
@@ -53,14 +58,26 @@ class ReplayMemory:
     def __getitem__(self, i: int) -> Transition:
         return self.memory[i]
 
+    def purge(self) -> None:
+        """Pare down the number of similar moves in the memory."""
+        possible_removal = [False] * len(self.memory)
+        for i, entry in enumerate(self.memory):
+            if int(entry.reward) < 5 and not entry.game_over:
+                possible_removal[i] = True
+        n = len(self.memory)
+        print(f"{sum(possible_removal)=}", end="\t")
+        for i in range(1, len(self.memory)+1):
+            if possible_removal[-i] and random.random() < 0.5:
+                e = self.memory.pop(n-i)
+
 class DQN(torch.nn.Module):
     def __init__(self, env: Env2048):
         super().__init__()
         len_input = env.game.width * env.game.height
         len_output = torch.numel(env.action_space)
-        self.linear_0 = torch.nn.Linear(len_input, len_input)
-        self.linear_1 = torch.nn.Linear(len_input, len_input)
-        self.linear_2 = torch.nn.Linear(len_input, len_output)
+        self.linear_0 = torch.nn.Linear(len_input, len_input * 10)
+        self.linear_1 = torch.nn.Linear(len_input * 10, len_input * 10)
+        self.linear_2 = torch.nn.Linear(len_input * 10, len_output)
         self.relu = torch.nn.ReLU()
     
     def forward(self, x: "torch.Tensor | np.ndarray") -> torch.Tensor:
@@ -72,15 +89,23 @@ class DQN(torch.nn.Module):
         y = self.linear_2(y)
         return y
 
+def save_code() -> None:
+    """Save a copy of the code to keep track of what we've tried."""
+    with open(__file__, "r") as f:
+        lines = f.readlines()
+    with open(f"saves/save_code_" + f"{TIME_STAMP}.py", "w") as f:
+        for line in lines:
+            print(line[:-1], file=f)
+
 def select_move(env: Env2048, policy_net: DQN, state: torch.Tensor, steps: int
         ) -> torch.int32:
     """Pick a move. Random more often early, use policy_net more later.
     
     Use an exponentially decaying threshold for the decision of which. """
     prob = random.random()
-    start = 0.25
+    start = 0.90
     end = 0.05
-    decay_steps = 5000
+    decay_steps = 50000
     threshold = end + (start - end) * math.exp(-1. * steps / decay_steps)
     if (steps + 1) % 500 == 0: 
         print(" "*53 + f"{threshold:.4f}", end="\r")
@@ -102,9 +127,9 @@ def optimize_model(
         memory: ReplayMemory,
     ):
     """Optimization step."""
-    # if len(memory) < BUFFER:
-    #     return
-    discount = 0.8
+    if len(memory) < BUFFER:
+        return
+    discount = 0.99
     transitions = memory.random_sample(BATCH_SIZE - 1)
     # I decided to make sure most recent move is included in the batch.
     transitions.append(memory[-1])
@@ -147,28 +172,32 @@ def read_saves(memory: ReplayMemory) -> None:
         memory.append(state, move, next_state, reward, game_over)
 
 def main():
+    save_code()
     env = Env2048(WIDTH, HEIGHT, PROB_4)
     policy_net = DQN(env)
     target_net = DQN(env)
     policy_net.train()
     target_net.train()
     target_net.load_state_dict(policy_net.state_dict())
-    optimizer = torch.optim.AdamW(policy_net.parameters(), lr=0.001, 
+    optimizer = torch.optim.AdamW(policy_net.parameters(), lr=0.0001, 
             amsgrad=True)
     lr_sch = torch.optim.lr_scheduler.MultiplicativeLR(optimizer, 
-            lambda epoch: 0.999)
+            lambda epoch: 0.1)
     memory = ReplayMemory(100000)
-    read_saves(memory)
+    # read_saves(memory)
     episode_scores = []
     steps = 0
     prev_steps = 0
-    buffer_reached = True 
     # print(f"Buffering {BUFFER} steps before starting training...")
     print("Ep   Steps   Score   Avg.Score   Last 10     LR     % rand moves")
     for i in range(EPISODES):
         state = env.reset()
         game_over = False
         while not game_over:
+            if (steps + 1) % 1000 == 0 and len(memory) > 1.5*BUFFER:
+                print(f"\n{len(memory)=}", end="\t")
+                memory.purge()
+                print(f"{len(memory)=}")
             move = select_move(env, policy_net, state, steps)
             next_state, reward, game_over = env.step(move)
             steps += 1
@@ -176,10 +205,10 @@ def main():
             memory.append(state, move, next_state, reward, game_over_tensor)
             state = next_state
             optimize_model(policy_net, target_net, optimizer, lr_sch, memory)
-            if buffer_reached:
+            if len(memory) > BUFFER:
                 print(f"{i:^3}  {steps - prev_steps:^5}   ", end="")
                 print(f"{env.game.score:^5}   ", end="\r")
-        if buffer_reached:
+        if len(memory) > BUFFER:
             episode_scores.append((steps - prev_steps, env.game.score))
             all_scores = [e[1] for e in episode_scores]
             print(f"{i:^3}  {steps - prev_steps:^5}   ", end="")
@@ -191,6 +220,11 @@ def main():
             else:
                 print(" " * 9, end="")
             print(f"   {lr_sch.get_last_lr()[0]:.8f}")
+        if (i + 1)%100 == 0:
+            torch.save(policy_net, 
+                    f"saves/policy_net_{(i+1)//100}_{TIME_STAMP}.pt")
+            torch.save(target_net, 
+                    f"saves/target_net_{(i+1)//100}_{TIME_STAMP}.pt")
         if steps > BUFFER:
             buffer_reached = True
         prev_steps = steps
