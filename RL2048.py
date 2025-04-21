@@ -65,7 +65,6 @@ class ReplayMemory:
             if int(entry.reward) < 5 and not entry.game_over:
                 possible_removal[i] = True
         n = len(self.memory)
-        print(f"{sum(possible_removal)=}", end="\t")
         for i in range(1, len(self.memory)+1):
             if possible_removal[-i] and random.random() < 0.5:
                 e = self.memory.pop(n-i)
@@ -195,9 +194,7 @@ def main():
         game_over = False
         while not game_over:
             if (steps + 1) % 1000 == 0 and len(memory) > 1.5*BUFFER:
-                print(f"\n{len(memory)=}", end="\t")
                 memory.purge()
-                print(f"{len(memory)=}")
             move = select_move(env, policy_net, state, steps)
             next_state, reward, game_over = env.step(move)
             steps += 1
