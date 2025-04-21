@@ -92,6 +92,8 @@ def main():
         height = 4
     if "-store" in args:
         transcribe = True
+    else:
+        transcribe = False
     text_output = Text2048(width, height, play_game=False)
     game = text_output.game
     pygame.init()
@@ -101,6 +103,7 @@ def main():
     if transcribe:
         saved_games = open(f'2048_savegame_{width}_{height}.txt', 'a')
         text_output.print_board(file=saved_games)
+    moves = 0
     while not game.game_over:
         screen.fill((0, 200, 255))
         for event in pygame.event.get():
@@ -113,9 +116,14 @@ def main():
         if transcribe and action is not None:
             print(action, game.score, file=saved_games)
             text_output.print_board(file=saved_games)
-    print("GAME OVER", file=saved_games)
-    saved_games.close()
-    print(f"FINAL SCORE: {game.score}")
+        moves += 1
+        if not transcribe:
+            print(moves, end="\r")
+    if transcribe:
+        print("GAME OVER", file=saved_games)
+        saved_games.close()
+    else:
+        print(f"FINAL SCORE: {game.score}")
     pygame.quit()
 
 if __name__ == "__main__":
